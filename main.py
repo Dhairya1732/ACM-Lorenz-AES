@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import skew
+import random as rd
 
 def pad_to_square(image):
     """Pad the image to make it square."""
@@ -66,8 +67,8 @@ def arnold_cat_map(image, iterations):
         temp = np.zeros_like(scrambled_image)
         for x in range(height):
             for y in range(width):
-                new_x = (x + y) % height
-                new_y = (x + (2 * y)) % width
+                new_x = (x + (y*p)) % height
+                new_y = ((x*q) + (((p*q)+1) * y)) % width
                 temp[new_x, new_y] = scrambled_image[x, y]
         scrambled_image = temp
     return scrambled_image
@@ -80,8 +81,8 @@ def inverse_arnold_cat_map(image, iterations):
         temp = np.zeros_like(unscrambled_image)
         for x in range(height):
             for y in range(width):
-                new_x = ((2 * x) - y) % height
-                new_y = ((-x) + y) % width
+                new_x = ((((p*q)+1) * x) - (y*(-p))) % height
+                new_y = ((x*(-q)) + y) % width
 
                 # Ensure positive indices
                 new_x = new_x if new_x >= 0 else new_x + height
@@ -92,50 +93,27 @@ def inverse_arnold_cat_map(image, iterations):
     return unscrambled_image
 
 def lorenz_map(seed, length):
-    """Generates a Lorenz chaotic sequence."""
+    """Generates Lorenz chaotic sequence values for a given seed."""
     sigma, rho, beta = 10.0, 28.0, 8.0 / 3.0
     x, y, z, dt = seed
-    sequence = []
+    dx_sequence, dy_sequence, dz_sequence = [], [], []
+
     for _ in range(length):
         dx = sigma * (y - x) * dt
         dy = (x * (rho - z) - y) * dt
         dz = (x * y - beta * z) * dt
+
+        # Update the Lorenz system state
         x += dx
         y += dy
         z += dz
-        sequence.append(abs(x) % 1)  # Normalize to [0, 1]
-    return np.array(sequence)
 
-def scramble_with_lorenz(image, seed):
-    """Scrambles the image using Lorenz Map to randomize pixel positions."""
-    height, width, _ = image.shape
-    total_pixels = height * width
-    chaotic_sequence = lorenz_map(seed, total_pixels)
-    indices = np.argsort(chaotic_sequence)
-    
-    flat_image = image.reshape(-1, 3)
-    scrambled_flat = np.zeros_like(flat_image)
-    
-    for i, index in enumerate(indices):
-        scrambled_flat[i] = flat_image[index]
-        
-    return scrambled_flat.reshape(height, width, 3)
+        # Append chaotic values
+        dx_sequence.append(dx)
+        dy_sequence.append(dy)
+        dz_sequence.append(dz)
 
-def inverse_scramble_with_lorenz(image, seed):
-    """Restores the scrambled image using Lorenz Map."""
-    height, width, _ = image.shape
-    total_pixels = height * width
-    chaotic_sequence = lorenz_map(seed, total_pixels)
-    indices = np.argsort(chaotic_sequence)
-    reverse_indices = np.argsort(indices)
-    
-    flat_image = image.reshape(-1, 3)
-    unscrambled_flat = np.zeros_like(flat_image)
-    
-    for i, index in enumerate(reverse_indices):
-        unscrambled_flat[index] = flat_image[i]
-        
-    return unscrambled_flat.reshape(height, width, 3)
+    return dx_sequence, dy_sequence, dz_sequence
 
 def main(image_path):
     # Load the image
@@ -146,17 +124,17 @@ def main(image_path):
     # Parameters
     x, y, z, dt = compute_lorenz_parameters(image)
     seed = (x, y, z, dt)
-    print(seed)
-    acm_iterations = 30  # Number of Arnold Cat Map iterations
+
+    # Generate Lorenz sequences
+    length = padded_image.shape[0] * padded_image.shape[1]
+    dx_sequence, dy_sequence, dz_sequence = lorenz_map(seed, length)
+
+    # Determine ACM iterations using dz
+    ctr = rd.randint(0,max(original_height,original_width))
+    acm_iterations = max(1, int(30 + dz_sequence[ctr])%50)  # Example scaling factor
 
     # Scramble using ACM
     scrambled_acm = arnold_cat_map(padded_image, acm_iterations)
-
-    # Further scramble with Lorenz Map
-    #scrambled_image = scramble_with_lorenz(scrambled_acm, seed)
-
-    # Decrypt: Reverse Lorenz Map scrambling
-    #descrambled_acm = inverse_scramble_with_lorenz(scrambled_image, seed)
 
     # Reverse ACM scrambling
     descrambled_image = inverse_arnold_cat_map(scrambled_acm, acm_iterations) 
@@ -182,7 +160,7 @@ def main(image_path):
 
     plt.subplot(2, 3, 4)
     plt.imshow(padded_image)
-    plt.title("padded Image")
+    plt.title("Padded Image")
     plt.axis('off')
 
     plt.tight_layout()
