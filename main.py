@@ -58,13 +58,15 @@ def compute_lorenz_parameters(image):
 
     return x, y, z, dt
 
-def arnold_cat_map(image, iterations):
+def arnold_cat_map(image, iterations, dx_sequence, dy_sequence):
     """Applies the Arnold Cat Map to scramble the image."""
     height, width, _ = image.shape
     scrambled_image = np.copy(image)
 
-    for _ in range(iterations):
+    for i in range(iterations):
         temp = np.zeros_like(scrambled_image)
+        p = dx_sequence[i]
+        q = dy_sequence[i]
         for x in range(height):
             for y in range(width):
                 new_x = (x + (y*p)) % height
@@ -73,35 +75,40 @@ def arnold_cat_map(image, iterations):
         scrambled_image = temp
     return scrambled_image
 
-def inverse_arnold_cat_map(image, iterations):
+def inverse_arnold_cat_map(image, iterations, dx_sequence, dy_sequence):
     height, width, _ = image.shape
     unscrambled_image = np.copy(image)
     
-    for _ in range(iterations):
+    for i in range(iterations):
         temp = np.zeros_like(unscrambled_image)
+        p = dx_sequence[i]
+        q = dy_sequence[i]
         for x in range(height):
             for y in range(width):
-                new_x = ((((p*q)+1) * x) - (y*(-p))) % height
+                new_x = ((((p*q)+1) * x) + (y*(-p))) % height
                 new_y = ((x*(-q)) + y) % width
-
-                # Ensure positive indices
-                new_x = new_x if new_x >= 0 else new_x + height
-                new_y = new_y if new_y >= 0 else new_y + width
-
                 temp[new_x, new_y] = unscrambled_image[x, y]
         unscrambled_image = temp
     return unscrambled_image
 
 def lorenz_map(seed, length):
     """Generates Lorenz chaotic sequence values for a given seed."""
-    sigma, rho, beta = 10.0, 28.0, 8.0 / 3.0
+    sigma, rho, beta = 10.0, 35.0, 8.0 / 3.0
     x, y, z, dt = seed
     dx_sequence, dy_sequence, dz_sequence = [], [], []
+
+    # Define capping limits for dx, dy, dz
+    cap_value = 1e50
 
     for _ in range(length):
         dx = sigma * (y - x) * dt
         dy = (x * (rho - z) - y) * dt
         dz = (x * y - beta * z) * dt
+
+        # Cap the values to prevent extreme growth
+        dx = min(dx, cap_value)
+        dy = min(dy, cap_value)
+        dz = min(dz, cap_value)
 
         # Update the Lorenz system state
         x += dx
@@ -109,9 +116,9 @@ def lorenz_map(seed, length):
         z += dz
 
         # Append chaotic values
-        dx_sequence.append(dx)
-        dy_sequence.append(dy)
-        dz_sequence.append(dz)
+        dx_sequence.append(abs(round(dx)))
+        dy_sequence.append(abs(round(dy)))
+        dz_sequence.append(abs(round(dz)))
 
     return dx_sequence, dy_sequence, dz_sequence
 
@@ -126,18 +133,18 @@ def main(image_path):
     seed = (x, y, z, dt)
 
     # Generate Lorenz sequences
-    length = padded_image.shape[0] * padded_image.shape[1]
+    length = rd.randint(20,50)
     dx_sequence, dy_sequence, dz_sequence = lorenz_map(seed, length)
-
-    # Determine ACM iterations using dz
-    ctr = rd.randint(0,max(original_height,original_width))
-    acm_iterations = max(1, int(30 + dz_sequence[ctr])%50)  # Example scaling factor
+    acm_iterations = length
 
     # Scramble using ACM
-    scrambled_acm = arnold_cat_map(padded_image, acm_iterations)
+    scrambled_image = arnold_cat_map(padded_image, acm_iterations, dx_sequence, dy_sequence)
+
+    dx_sequence = list(reversed(dx_sequence))
+    dy_sequence = list(reversed(dy_sequence))
 
     # Reverse ACM scrambling
-    descrambled_image = inverse_arnold_cat_map(scrambled_acm, acm_iterations) 
+    descrambled_image = inverse_arnold_cat_map(scrambled_image, acm_iterations, dx_sequence, dy_sequence) 
 
     cropped_image = crop_to_original(descrambled_image, original_height, original_width)
 
@@ -149,18 +156,13 @@ def main(image_path):
     plt.axis('off')
 
     plt.subplot(2, 3, 2)
-    plt.imshow(scrambled_acm)
+    plt.imshow(scrambled_image)
     plt.title("Encrypted Image")
     plt.axis('off')
 
     plt.subplot(2, 3, 3)
     plt.imshow(cropped_image)
     plt.title("Decrypted Image")
-    plt.axis('off')
-
-    plt.subplot(2, 3, 4)
-    plt.imshow(padded_image)
-    plt.title("Padded Image")
     plt.axis('off')
 
     plt.tight_layout()
