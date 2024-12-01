@@ -3,21 +3,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import random as rd
 from Crypto.Cipher import AES
-from Crypto.Util.Padding import pad, unpad
 import os
-from  utils import crop_to_original, pad_to_square, compute_lorenz_parameters
+from  utils import crop_to_original, pad_to_square, compute_lorenz_parameters, logistic_map
 from ACM_Lorenz import lorenz_map, arnold_cat_map, inverse_arnold_cat_map
-
-def pad_image_to_block_size(image, block_size=16):
-    """
-    Pads the image to make its byte array length a multiple of the AES block size.
-    """
-    h, w, c = image.shape
-    padded_h = (h + block_size - 1) // block_size * block_size
-    padded_w = (w + block_size - 1) // block_size * block_size
-    padded_image = np.zeros((padded_h, padded_w, c), dtype=np.uint8)
-    padded_image[:h, :w, :] = image
-    return padded_image
 
 def aes_encrypt_image(image, key, iv):
     """
@@ -76,13 +64,23 @@ def main(image_path):
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)  # Convert to RGB
     padded_image, original_height, original_width =  pad_to_square(image)
 
-    # Generate a random AES key and IV (for example purposes)
-    key = os.urandom(16)  
-    iv = os.urandom(16)  
-
     # Parameters
     x, y, z, dt = compute_lorenz_parameters(image)
     seed = (x, y, z, dt)
+
+    # Generate a random AES key and IV
+    key_bytes1 = np.array(logistic_map(seed, 32),dtype=np.float32)*255
+    iv_bytes1 = np.array(logistic_map(seed, 16),dtype=np.float32)*255
+
+    key1=bytes(key_bytes1.astype(np.uint8))
+    iv1=bytes(iv_bytes1.astype(np.uint8))
+
+    # Generate a random AES key and IV
+    key_bytes2 = np.array(logistic_map(seed, 32),dtype=np.float32)*255
+    iv_bytes2 = np.array(logistic_map(seed, 16),dtype=np.float32)*255
+
+    key2=bytes(key_bytes2.astype(np.uint8))
+    iv2=bytes(iv_bytes2.astype(np.uint8))
 
     # Generate Lorenz sequences
     length = rd.randint(20,50)
@@ -90,25 +88,25 @@ def main(image_path):
     acm_iterations = length
 
     # Encrypt the image using AES before scrambling
-    encrypted_image1 = aes_encrypt_image(padded_image, key, iv)
+    encrypted_image1 = aes_encrypt_image(padded_image, key1, iv1)
 
     # Scramble using ACM
     scrambled_image = arnold_cat_map(encrypted_image1, acm_iterations, dx_sequence, dy_sequence)
 
     # Encrypt the image using AES after scrambling
-    encrypted_image2 = aes_encrypt_image(scrambled_image, key, iv)
+    encrypted_image2 = aes_encrypt_image(scrambled_image, key2, iv2)
 
     dx_sequence.reverse()
     dy_sequence.reverse()
 
     # Decrypt the image before unscrambling
-    decrypted_image1 = aes_decrypt_image(encrypted_image2, key, iv)
+    decrypted_image1 = aes_decrypt_image(encrypted_image2, key2, iv2)
 
     # Reverse ACM scrambling
     descrambled_image = inverse_arnold_cat_map(decrypted_image1, acm_iterations, dx_sequence, dy_sequence) 
 
     # Decrypt the image after unscrambling
-    decrypted_image2 = aes_decrypt_image(descrambled_image, key, iv)
+    decrypted_image2 = aes_decrypt_image(descrambled_image, key1, iv1)
 
     cropped_image = crop_to_original(decrypted_image2, original_height, original_width)
 

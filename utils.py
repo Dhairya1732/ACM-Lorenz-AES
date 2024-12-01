@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 from scipy.stats import skew
+import random as rd
 
 def crop_to_original(image, original_height, original_width):
     """Crop the image back to its original size."""
@@ -55,3 +56,12 @@ def compute_lorenz_parameters(image):
     dt = (correlation + 1) / 2 * 0.099 + 0.001  # Scale to [0.001, 0.1]
 
     return x, y, z, dt
+
+def logistic_map(seed, length):
+    logistic_sequence = []
+    x = seed[0]
+    r = rd.uniform(3.57,4)
+    for _ in range(length):
+        x_new = r * x * (1-x)
+        logistic_sequence.append(x_new)
+    return logistic_sequence
