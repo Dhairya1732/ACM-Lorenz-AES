@@ -3,7 +3,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import random as rd
 from Crypto.Cipher import AES
-import os
 from  utils import crop_to_original, pad_to_square, compute_lorenz_parameters, logistic_map
 from ACM_Lorenz import lorenz_map, arnold_cat_map, inverse_arnold_cat_map
 
