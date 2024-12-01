@@ -8,55 +8,66 @@ import os
 from  utils import crop_to_original, pad_to_square, compute_lorenz_parameters
 from ACM_Lorenz import lorenz_map, arnold_cat_map, inverse_arnold_cat_map
 
-# Function to encrypt the image using AES
-def aes_encrypt_image(image, key, iv):
-    """Encrypt the image using AES encryption block-by-block."""
-    height, width, channels = image.shape
-    cipher = AES.new(key, AES.MODE_CBC, iv)
-    
-    # Create a new array for the encrypted image
-    encrypted_image = np.zeros_like(image)
-    
-    # Iterate over the image in blocks of 16x16 pixels (AES block size)
-    for channel in range(channels):  # Iterate over RGB channels separately
-        for i in range(0, height, 16):
-            for j in range(0, width, 16):
-                block = image[i:i+16, j:j+16, channel]  # Get a 16x16 block for this channel
-                
-                # If block is smaller than 16x16, pad it
-                if block.shape[0] < 16 or block.shape[1] < 16:
-                    block = np.pad(block, ((0, 16 - block.shape[0]), (0, 16 - block.shape[1])), mode='constant')
+def pad_image_to_block_size(image, block_size=16):
+    """
+    Pads the image to make its byte array length a multiple of the AES block size.
+    """
+    h, w, c = image.shape
+    padded_h = (h + block_size - 1) // block_size * block_size
+    padded_w = (w + block_size - 1) // block_size * block_size
+    padded_image = np.zeros((padded_h, padded_w, c), dtype=np.uint8)
+    padded_image[:h, :w, :] = image
+    return padded_image
 
-                block_bytes = block.tobytes()
-                encrypted_block = cipher.encrypt(pad(block_bytes, AES.block_size))  # Encrypt the block
-                
-                # Convert the encrypted block back to a numpy array and store it in the encrypted image
-                encrypted_image[i:i+16, j:j+16, channel] = np.frombuffer(encrypted_block, dtype=np.uint8).reshape((16, 16))
+def aes_encrypt_image(image, key, iv):
+    """
+    Encrypts an image using AES (CBC mode) while preserving its structure.
+    Each channel is encrypted independently.
+    """
+    h, w, c = image.shape
+    cipher = AES.new(key, AES.MODE_CBC, iv)
+
+    # Encrypt each channel independently
+    encrypted_channels = []
+    for i in range(c):
+        # Flatten the channel and pad to a multiple of block size
+        flat_channel = image[:, :, i].flatten()
+        padding_length = 16 - (len(flat_channel) % 16)
+        flat_channel = np.pad(flat_channel, (0, padding_length), mode='constant', constant_values=0)
+        
+        # Encrypt the flattened channel
+        encrypted_data = cipher.encrypt(flat_channel.tobytes())
+        
+        # Convert back to array
+        encrypted_channel = np.frombuffer(encrypted_data, dtype=np.uint8)[:h * w]
+        encrypted_channels.append(encrypted_channel.reshape(h, w))
     
+    # Stack the channels back
+    encrypted_image = np.stack(encrypted_channels, axis=-1)
     return encrypted_image
 
-# Function to decrypt the image using AES
-def aes_decrypt_image(encrypted_image, key, iv, original_shape):
-    """Decrypt the image using AES decryption block-by-block."""
-    height, width, channels = original_shape
+def aes_decrypt_image(encrypted_image, key, iv):
+    """
+    Decrypts an AES-encrypted image channel by channel.
+    """
+    h, w, c = encrypted_image.shape
     cipher = AES.new(key, AES.MODE_CBC, iv)
+
+    # Decrypt each channel independently
+    decrypted_channels = []
+    for i in range(c):
+        # Flatten the encrypted channel
+        flat_channel = encrypted_image[:, :, i].flatten()
+        
+        # Decrypt the flattened channel
+        decrypted_data = cipher.decrypt(flat_channel.tobytes())
+        
+        # Remove padding (if any)
+        decrypted_channel = np.frombuffer(decrypted_data, dtype=np.uint8)[:h * w]
+        decrypted_channels.append(decrypted_channel.reshape(h, w))
     
-    # Create a new array for the decrypted image
-    decrypted_image = np.zeros_like(encrypted_image)
-    
-    # Iterate over the image in blocks of 16x16 pixels (AES block size)
-    for channel in range(channels):  # Iterate over RGB channels separately
-        for i in range(0, height, 16):
-            for j in range(0, width, 16):
-                encrypted_block = encrypted_image[i:i+16, j:j+16, channel]  # Get a 16x16 encrypted block for this channel
-                encrypted_block_bytes = encrypted_block.tobytes()
-                
-                # Decrypt the block and remove padding
-                decrypted_block = unpad(cipher.decrypt(encrypted_block_bytes), AES.block_size)
-                
-                # Convert the decrypted block back to a numpy array and store it in the decrypted image
-                decrypted_image[i:i+16, j:j+16, channel] = np.frombuffer(decrypted_block, dtype=np.uint8).reshape((16, 16))
-    
+    # Stack the channels back
+    decrypted_image = np.stack(decrypted_channels, axis=-1)
     return decrypted_image
 
 def main(image_path):
